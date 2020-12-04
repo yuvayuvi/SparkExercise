@@ -7,10 +7,10 @@ object DisplayParquetInfo {
                         .master("local[1]")
                         .appName("Yuvi_Test")
                         .getOrCreate()
-                val parqDF = spark.read.parquet("E:\\Yuvi\\Spark-Read-Excel-Sample\\mock_data.parquet\\part-00000-635e9d78-8eff-4268-9404-f4a731602e9a-c000.snappy.parquet")
+                val parqDF = spark.read.parquet("E:\\Yuvi\\Spark-Read-Excel-Sample\\mock_data.parquet\\part-00000-b6e4bf40-21ea-477c-befd-dc76ee393b1f-c000.snappy.parquet")
                 parqDF.createOrReplaceTempView("ParquetTable")
-                spark.sql("select * from ParquetTable where id != 'id'").explain()
-                val parkSQL = spark.sql("select * from ParquetTable where id != 'id'")
+                spark.sql("select * from ParquetTable").explain()
+                val parkSQL = spark.sql("select * from ParquetTable")
                 parkSQL.show()
                 parkSQL.printSchema()
         }

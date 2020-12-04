@@ -1,7 +1,14 @@
-import org.apache.spark.sql.{SQLContext, SparkSession}
+import java.security.MessageDigest
+
+import org.apache.spark.sql.{Row, SQLContext, SparkSession}
 import org.apache.spark.{SparkConf, SparkContext}
 import com.google.gson.{Gson, JsonParser}
-import java.util.Base64
+//import java.util.Base64
+
+import javax.crypto.Cipher
+import javax.crypto.spec.SecretKeySpec
+import java.util
+import org.apache.commons.codec.binary.Base64
 
 
 object ReadCSVFile {
@@ -24,49 +31,44 @@ object ReadCSVFile {
                 val sc = new SparkContext(conf)
                 val sqlContext = new SQLContext(sc)
                 import sqlContext.implicits._
-                val textRDD = sc.textFile("E:\\Yuvi\\Spark-Read-Excel-Sample\\MOCK_DATA.csv")
-                val empRdd = textRDD.map {
-                        line =>
-                                val col = line.split(delimiter)
-                                val id = if(encryptionColumns.contains("id")) convertBase64(col(0)) else col(0)
-                                val firstName = if(encryptionColumns.contains("first_name")) convertBase64(col(1)) else col(1)
-                                val lastName = if(encryptionColumns.contains("last_name")) convertBase64(col(2)) else col(2)
-                                val email = if(encryptionColumns.contains("email")) convertBase64(col(3)) else col(3)
-                                val gender = if(encryptionColumns.contains("gender")) convertBase64(col(4)) else col(4)
-                                val ipAddress = if(encryptionColumns.contains("ip_address")) convertBase64(col(5)) else col(5)
-                                val cardNo = if(encryptionColumns.contains("card_no")) convertBase64(col(6)) else col(6)
-                                val mobileNo = if(encryptionColumns.contains("mobile_no")) convertBase64(col(7)) else col(7)
-                                val ssn =  if(encryptionColumns.contains("ssn")) convertBase64(col(8)) else col(8)
-
-                                Employee(id, firstName, lastName, email, gender, ipAddress, cardNo, mobileNo, ssn)
-                }
-                val empDF = empRdd.toDF()
+                // Read file as RDD
+                val rdd = sqlContext.read.format("csv").option("header", "true").load("E:\\Yuvi\\Spark-Read-Excel-Sample\\MOCK_DATA.csv")
+                val empDF = rdd.toDF()
                 empDF.write.parquet("E:\\Yuvi\\Spark-Read-Excel-Sample\\mock_data.parquet")
+                val key = "02071993"
+                encryptionColumns.foreach{ fieldName =>
+                        val encryptedDF = empDF.select(fieldName).rdd.map {
+                                case Row(string_val: String) => (string_val, encrypt(key,string_val))
+                        }.toDF(fieldName, "encrypted_"+fieldName)
+                        encryptedDF.write.parquet("E:\\Yuvi\\Spark-Read-Excel-Sample\\encrypted_mock_data_"+fieldName+".parquet")
+                }
                 columnPartition.foreach{ i =>
                         empDF.write.partitionBy(i)parquet("E:\\Yuvi\\Spark-Read-Excel-Sample\\mock_data_partitioned_"+i+".parquet")
                 }
 
-                //To read Parquet file
-                /*val spark: SparkSession = SparkSession.builder()
-                        .master("local[1]")
-                        .appName("Yuvi_Test")
-                        .getOrCreate()
-                val parqDF = spark.read.parquet("E:\\Yuvi\\Spark-Read-Excel-Sample\\mock_data.parquet\\part-00000-d03247d2-65cf-4fb1-a9c3-b8b795ff1544-c000.snappy.parquet")
-                parqDF.createOrReplaceTempView("ParquetTable")
-                spark.sql("select * from ParquetTable where id != 'id'").explain()
-                val parkSQL = spark.sql("select * from ParquetTable where id != 'id'")
-                parkSQL.show()
-                parkSQL.printSchema()*/
         }
 
-        def convertBase64(ip : String): String = {
-                val encoder = Base64.getEncoder
-                encoder.encodeToString(ip.getBytes)
+
+        def encrypt(key: String, value: String): String = {
+                val cipher: Cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+                cipher.init(Cipher.ENCRYPT_MODE, keyToSpec(key))
+                Base64.encodeBase64String(cipher.doFinal(value.getBytes("UTF-8")))
         }
 
-        def decodeBase64(base64 : String): String ={
-                val decoder = Base64.getUrlDecoder
-                val bytes = decoder.decode(base64)
-                new String(bytes)
+        def decrypt(key: String, encryptedValue: String): String = {
+                val cipher: Cipher = Cipher.getInstance("AES/ECB/PKCS5PADDING")
+                cipher.init(Cipher.DECRYPT_MODE, keyToSpec(key))
+                new String(cipher.doFinal(Base64.decodeBase64(encryptedValue)))
         }
+
+        def keyToSpec(key: String): SecretKeySpec = {
+                var keyBytes: Array[Byte] = (SALT + key).getBytes("UTF-8")
+                val sha: MessageDigest = MessageDigest.getInstance("SHA-1")
+                keyBytes = sha.digest(keyBytes)
+                keyBytes = util.Arrays.copyOf(keyBytes, 16)
+                new SecretKeySpec(keyBytes, "AES")
+        }
+
+        private val SALT: String =
+                "jMhKlOuJnM34G6NHkqo9V010GhLAqOpF0BePojHgh1HgNg8^72k"
 }
